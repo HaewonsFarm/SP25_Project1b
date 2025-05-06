@@ -1,7 +1,5 @@
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-
+import java.io.*;
+import java.util.*;
 
 /**
  * Assembler :
@@ -24,18 +22,25 @@ import java.util.Map;
  */
 public class Assembler {
 	/** instruction 명세를 저장한 공간 */
-	InstTable instTable;
+	private InstTable instTable;
 	/** 읽어들인 input 파일의 내용을 한 줄 씩 저장하는 공간. */
-	ArrayList<String> lineList;
+	private ArrayList<String> lineList;
 	/** 프로그램의 section별로 symbol table을 저장하는 공간*/
-	ArrayList<SymbolTable> symtabList;
+	private ArrayList<SymbolTable> symtabList;
 	/** 프로그램의 section별로 프로그램을 저장하는 공간*/
-	ArrayList<TokenTable> TokenList;
+	private ArrayList<TokenTable> tokenList;
+
+	private ArrayList<LiteralTable> littabList;
 	/**
 	 * Token, 또는 지시어에 따라 만들어진 오브젝트 코드들을 출력 형태로 저장하는 공간. <br>
 	 * 필요한 경우 String 대신 별도의 클래스를 선언하여 ArrayList를 교체해도 무방함.
 	 */
-	ArrayList<String> codeList;
+	private ArrayList<String> codeList;
+
+	// Pass1
+	private int currentSection;
+	private int locctr;
+	private ArrayList<Integer> sectionStartAddr;
 
 	/**
 	 * 클래스 초기화. instruction Table을 초기화와 동시에 세팅한다.
@@ -43,27 +48,30 @@ public class Assembler {
 	 * @param instFile : instruction 명세를 작성한 파일 이름.
 	 */
 	public Assembler(String instFile) {
-		instTable = new InstTable(instFile);
-		lineList = new ArrayList<String>();
-		symtabList = new ArrayList<SymbolTable>();
-		TokenList = new ArrayList<TokenTable>();
-		codeList = new ArrayList<String>();
+		instTable = new InstTable("inst_table.txt");
+		lineList = new ArrayList<>();
+		symtabList = new ArrayList<>();
+		tokenList = new ArrayList<>();
+		littabList = new ArrayList<>();
+		codeList = new ArrayList<>();
+		sectionStartAddr = new ArrayList<>();
 	}
 
 	/**
-	 * 어셐블러의 메인 루틴
+	 * 어셈블러의 메인 루틴
 	 */
 	public static void main(String[] args) {
-		Assembler assembler = new Assembler("inst_table.txt");
-		assembler.loadInputFile("input.txt");
-
-		assembler.pass1();
-		assembler.printSymbolTable("output_symtab.txt");
-		assembler.printLiteralTable("output_littab.txt");
-
-		assembler.pass2();
-		assembler.printObjectCode("output_objectcode.txt");
-
+		Assembler asm = new Assembler("inst_table.txt");
+		try {
+			asm.loadInputFile("input.txt");
+			asm.pass1();
+			asm.printSymbolTable("output_symtab.txt");
+			asm.printLiteralTable("output_littab.txt");
+			asm.pass2();
+			asm.printObjectCode("output_objectcode.txt");
+		} catch (IOException e) {
+			System.err.println("I/O Error: " + e.getMessage());
+		}
 	}
 
 
@@ -71,27 +79,15 @@ public class Assembler {
 	 * inputFile을 읽어들여서 lineList에 저장한다.<br>
 	 * @param inputFile : input 파일 이름.
 	 */
-	private void loadInputFile(String inputFile) {
-		// TODO Auto-generated method stub
-
-	}
-
-	/**
-	 * 작성된 SymbolTable들을 출력형태에 맞게 출력한다.<br>
-	 * @param fileName : 저장되는 파일 이름
-	 */
-	private void printSymbolTable(String fileName) {
-		// TODO Auto-generated method stub
-
-	}
-
-	/**
-	 * 작성된 LiteralTable들을 출력형태에 맞게 출력한다.<br>
-	 * @param fileName : 저장되는 파일 이름
-	 */
-	private void printLiteralTable(String fileName) {
-		// TODO Auto-generated method stub
-
+	private void loadInputFile(String inputFile) throws IOException {
+		BufferedReader br = new BufferedReader(new FileReader(inputFile));
+		String line;
+		while ((line = br.readLine()) != null) {
+			line = line.trim();
+			if (line.isEmpty() || line.startsWith(".")) continue;
+			lineList.add(line);
+		}
+		br.close();
 	}
 
 	/**
@@ -102,8 +98,193 @@ public class Assembler {
 	 *    주의사항 : SymbolTable과 TokenTable은 프로그램의 section별로 하나씩 선언되어야 한다.
 	 */
 	private void pass1() {
-		// TODO Auto-generated method stub
+		// 초기화
+		currentSection = -1;
+		ArrayList<Token> deferredEquList = new ArrayList<>();
 
+		// 각 라인 토큰화
+		for (String line : lineList) {
+
+			// 첫 섹션이 없으면 기본 섹션
+			if (currentSection < 0) {
+				symtabList.add(new SymbolTable());
+				tokenList.add(new TokenTable(symtabList.get(0), instTable));
+				littabList.add(new LiteralTable());
+				currentSection = 0;
+				locctr = 0;
+				sectionStartAddr.add(locctr);
+			}
+
+			TokenTable tt = tokenList.get(currentSection);
+			SymbolTable st = symtabList.get(currentSection);
+			LiteralTable lt = littabList.get(currentSection);
+
+			tt.putToken(line);
+			Token tok = tt.getToken(tt.size() - 1);
+
+			tok.location = locctr; // ⭐ 토큰에 위치 기록
+
+			System.out.println("== DEBUG: Processing line ==");
+			System.out.println(line);
+			System.out.println("Token:");
+			System.out.println("  Label    : " + tok.label);
+			System.out.println("  Operator : " + tok.operator);
+			System.out.println("  Operand  : " + Arrays.toString(tok.operand));
+			System.out.println("  LOCCTR   : " + String.format("%04X", locctr));
+			System.out.println("-------------------------------");
+
+			// 새 섹션: START 또는 CSECT
+			if ("START".equals(tok.operator)) {
+				locctr = Integer.parseInt(tok.operand[0], 16);
+				sectionStartAddr.set(currentSection, locctr);
+				if (tok.label != null && !tok.label.isEmpty()) {
+					if (st.searchSymbol(tok.label) == -1) {
+						st.putSymbol(tok.label, locctr);
+					}
+				}
+				continue;
+			} else if ("CSECT".equals(tok.operator)) {
+				currentSection++;
+				symtabList.add(new SymbolTable());
+				tokenList.add(new TokenTable(symtabList.get(currentSection), instTable));
+				littabList.add(new LiteralTable());
+				locctr = 0;
+				sectionStartAddr.add(locctr);
+				if (tok.label != null && !tok.label.isEmpty()) {
+					symtabList.get(currentSection).putSymbol(tok.label, locctr);
+				}
+				continue;
+			}
+
+			// 리터럴 등록
+			if (tok.operand != null && tok.operand.length > 0 && tok.operand[0].startsWith("=")) {
+				lt.putLiteral(tok.operand[0]);
+			}
+
+			String mnemonic = tok.operator.startsWith("+") ? tok.operator.substring(1) : tok.operator;
+
+			// 레이블 등록 (단, EQU는 나중에 처리하므로 제외!)
+			if (!"EQU".equals(mnemonic)) {
+				if (tok.label != null && !tok.label.isEmpty()) {
+					st.putSymbol(tok.label, locctr);
+				}
+			}
+
+			if ("EQU".equals(mnemonic)) {
+				deferredEquList.add(tok);
+				continue;
+			}
+
+			// LOCCTR 증가 처리
+			if ("WORD".equals(mnemonic)) {
+				locctr += 3;
+			} else if ("RESW".equals(mnemonic)) {
+				locctr += 3 * Integer.parseInt(tok.operand[0]);
+			} else if ("RESB".equals(mnemonic)) {
+				locctr += Integer.parseInt(tok.operand[0]);
+			} else if ("BYTE".equals(mnemonic)) {
+				String opnd = tok.operand[0];
+				if (opnd.startsWith("C'") && opnd.endsWith("'")) {
+					locctr += opnd.substring(2, opnd.length() - 1).length();
+				} else if (opnd.startsWith("X'") && opnd.endsWith("'")) {
+					String hex = opnd.substring(2, opnd.length() - 1);
+					locctr += (hex.length() + 1) / 2;
+				}
+			} else if ("LTORG".equals(mnemonic)) {
+				processLiteralPool(currentSection);
+				continue;
+			} else if ("END".equals(mnemonic)) {
+				processLiteralPool(currentSection);
+				break;
+			} else {
+				int fmt = instTable.getInstructionLength(tok.operator);
+				if (fmt > 0) {
+					locctr += fmt;
+					System.out.println(">>Mnemonic: " + mnemonic + ", Format: " + fmt);
+				}
+			}
+		}
+
+		for (int sec = 0; sec < tokenList.size(); sec++) {
+			SymbolTable st = symtabList.get(sec);
+			for (Token eqTok : tokenList.get(sec).getTokenList()) {
+				if ("EQU".equals(eqTok.operator)) {
+					String label = eqTok.label;
+					String expr = eqTok.operand[0];
+					int value = 0;
+
+					if (expr.equals("*")) {
+						value = eqTok.location;
+					} else if (expr.contains("-")) {
+						String[] terms = expr.split("-");
+						int a = st.getSymbol(terms[0].trim());
+						int b = st.getSymbol(terms[1].trim());
+
+						if (a == -1 || b == -1) {
+							System.err.println("⚠ Undefined symbol in EQU: " + expr);
+							continue;
+						}
+						value = a - b;
+					} else {
+						value = st.getSymbol(expr);
+						if (value == -1) {
+							System.err.println("⚠ Undefined symbol used in EQU: " + expr);
+							continue;
+						}
+					}
+
+					st.putSymbol(label, value);
+				}
+			}
+		}
+	}
+
+	/**
+	 * literal pool 처리: 아직 주소가 할당되지 않은(-1) 리터럴에 대해
+	 * 현재 locctr 을 주소로 설정하고, 크기만큼 locctr 을 증가시킴
+	 */
+	/**
+	 * literal pool 처리: 아직 주소가 -1인 리터럴에 대해
+	 *   1) 현재 locctr을 주소로 설정
+	 *   2) 리터럴 크기만큼 locctr을 증가
+	 */
+	private void processLiteralPool(int sec) {
+		LiteralTable lt = littabList.get(sec);
+		for (int i = 0; i < lt.size(); i++) {
+			if (lt.getLocation(i) == -1) {
+				lt.setLocation(i, locctr);
+
+				String lit = lt.getLiteral(i);
+				int size = 0;
+
+				if (lit.startsWith("=C'") && lit.endsWith("'")) {
+					size = lit.substring(3, lit.length() - 1).length();
+				} else if (lit.startsWith("=X'") && lit.endsWith("'")) {
+					int hexLen = lit.substring(3, lit.length() - 1).length();
+					size = (hexLen + 1) / 2;
+				}
+
+				locctr += size;
+			}
+		}
+	}
+
+	private void printSymbolTable(String fileName) throws IOException {
+		BufferedWriter bw = new BufferedWriter(new FileWriter(fileName));
+		for (int i=0; i<symtabList.size(); i++){
+			bw.write("[Section " + (i + 1) + "] Symbol Table"); bw.newLine();
+			bw.write(symtabList.get(i).toString()); bw.newLine();
+		}
+		bw.close();
+	}
+
+	private void printLiteralTable(String fileName) throws IOException {
+		BufferedWriter bw = new BufferedWriter(new FileWriter(fileName));
+		for (int i = 0; i < littabList.size(); i++) {
+			bw.write("[Section " + (i + 1) + "] Literal Table"); bw.newLine();
+			bw.write(littabList.get(i).toString()); bw.newLine();
+		}
+		bw.close();
 	}
 
 	/**
@@ -119,8 +300,12 @@ public class Assembler {
 	 * 작성된 codeList를 출력형태에 맞게 출력한다.<br>
 	 * @param fileName : 저장되는 파일 이름
 	 */
-	private void printObjectCode(String fileName) {
-		// TODO Auto-generated method stub
-
+	private void printObjectCode(String fileName) throws IOException {
+		BufferedWriter bw = new BufferedWriter(new FileWriter(fileName));
+		for (String rec : codeList) {
+			bw.write(rec);
+			bw.newLine();
+		}
+		bw.close();
 	}
 }

@@ -5,8 +5,18 @@ import java.util.ArrayList;
  * section 별로 하나씩 인스턴스를 할당한다.
  */
 public class SymbolTable {
-	ArrayList<String> symbolList;
-	ArrayList<Integer> locationList;
+	/** 심볼 이름 목록 */
+	private ArrayList<String> symbolList;
+	/** 심볼 주소 목록 */
+	private ArrayList<Integer> locationList;
+
+	/**
+	 * 기본 생성자: 내부 리스트를 초기화
+	 */
+	public SymbolTable() {
+		this.symbolList = new ArrayList<>();
+		this.locationList = new ArrayList<>();
+	}
 
 	/**
 	 * 새로운 Symbol을 table에 추가한다.
@@ -17,7 +27,29 @@ public class SymbolTable {
 	 * 매칭되는 주소값의 변경은 modifySymbol()을 통해서 이루어져야 한다.
 	 */
 	public void putSymbol(String symbol, int location) {
+		if (symbolList.contains(symbol)) return; // 중복 방지
+		symbolList.add(symbol);
+		locationList.add(location);
+	}
 
+	/**
+	 * 심볼 테이블 크기(등록된 심볼 개수)를 반환
+	 */
+	public int size() {
+		return symbolList.size();
+	}
+
+	/**
+	 * 심볼 목록과 주소 목록을 출력용 문자열로 포맷팅
+	 */
+	@Override
+	public String toString() {
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < symbolList.size(); i++) {
+			sb.append(String.format("%-10s %X", symbolList.get(i), locationList.get(i)));
+			sb.append(System.lineSeparator());
+		}
+		return sb.toString();
 	}
 
 	/**
@@ -26,7 +58,10 @@ public class SymbolTable {
 	 * @param newLocation : 새로 바꾸고자 하는 주소값
 	 */
 	public void modifySymbol(String symbol, int newLocation) {
-
+		int idx = symbolList.indexOf(symbol);
+		if (idx >= 0) {
+			locationList.set(idx, newLocation);
+		}
 	}
 
 	/**
@@ -35,11 +70,19 @@ public class SymbolTable {
 	 * @return symbol이 가지고 있는 주소값. 해당 symbol이 없을 경우 -1 리턴
 	 */
 	public int searchSymbol(String symbol) {
-		int address = 0;
-		//...
-		return address;
+		int idx = symbolList.indexOf(symbol);
+		if (idx >= 0) {
+			return locationList.get(idx);
+		}
+		return -1;
 	}
 
-
-
+	/** EQU 등에서 사용할 수 있는 심볼 조회 함수 */
+	public int getSymbol(String symbol) {
+		int addr = searchSymbol(symbol);
+		if (addr == -1) {
+			System.err.println("⚠ Undefined symbol used in EQU: " + symbol);
+		}
+		return addr;
+	}
 }
