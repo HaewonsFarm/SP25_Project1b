@@ -80,9 +80,6 @@ public class SymbolTable {
 	/** EQU 등에서 사용할 수 있는 심볼 조회 함수 */
 	public int getSymbol(String symbol) {
 		int addr = searchSymbol(symbol);
-		if (addr == -1) {
-			System.err.println("⚠ Undefined symbol used in EQU: " + symbol);
-		}
 		return addr;
 	}
 }

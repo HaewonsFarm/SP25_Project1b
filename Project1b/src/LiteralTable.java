@@ -12,8 +12,10 @@ public class LiteralTable {
 
     // 리터럴 추가
     public void putLiteral(String literal) {
-        literalList.add(literal);
-        locationList.add(-1);    // ★ 여기서 기본값으로 -1을 등록
+        if (!literalList.contains(literal)) {
+            literalList.add(literal);
+            locationList.add(-1);    // ★ 여기서 기본값으로 -1을 등록
+        }
     }
 
     /**

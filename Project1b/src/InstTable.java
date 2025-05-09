@@ -33,6 +33,10 @@ public class InstTable {
 		return extended ? 4 : inst.format;
 	}
 
+	public Instruction getInst(String mnemonic) {
+		return instMap.get(mnemonic.toUpperCase());
+	}
+
 	/**
 	 * 입력받은 이름의 파일을 열고 해당 내용을 파싱하여 instMap에 저장한다.
 	 */
